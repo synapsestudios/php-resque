@@ -186,4 +186,81 @@ class Resque
 		}
 		return $queues;
 	}
+	
+	/**
+	 * Add a job to the delayed queue and update the schedule
+	 * list.
+	 * 
+	 * @param DateTime $delay When to run the job
+	 * @return void;
+	 */
+	public static function pushDelayed(DateTime $delay, $item)
+	{
+		self::redis()->rpush('delayed:' . $delay->getTimestamp(), json_encode($item));
+		self::redis()->zadd('delayed_queue_schedule', $delay->getTimestamp(), $delay->getTimestamp());
+	}
+
+	/**
+	 * Delay adding a job to a queue. This method schedules a job 
+	 * for queueing. Specify a timestamp to control when the job gets 
+	 * added to the queue.
+	 * 
+	 * @param DateTime $delay When to add the job to the queue
+	 * @param string   $queue The queue name
+	 * @param string   $class The worker to run
+	 * @param array    $args  Job arguments
+	 * @return type 
+	 */
+	public static function enqueDelayed(DateTime $delay, $queue, $class, $args = null)
+	{
+		require_once dirname(__FILE__) . '/Resque/Job.php';
+		$result = Resque_Job::createDelayed($delay, $queue, $class, $args);
+
+		return $result;
+	}
+
+	/**
+	 * Get the next delayed job.
+	 * 
+	 * @param  int $at_time Time when job should run, defaults to now
+	 * @return int          delayed job timetamp
+	 */
+	public static function next_delayed_timestamp($at_time = null)
+	{
+		$item = self::redis()->zrangebyscore('delayed_queue_schedule', '-inf', $at_time ?: time(), 'limit', 0, 1);
+
+		if ( ! $item)
+			return null;
+
+		return array_shift($item);
+	}
+
+	/**
+	 * Returns the next item to be processed for a given timestamp, null if done.
+	 * 
+	 * @param  DateTime $time When to run the job
+	 * @return mixed          job array or null if no job was found
+	 */
+	public static function next_item_for_timestamp($timestamp)
+	{
+		$key = 'delayed:'.$timestamp;
+
+		// Get the item out of the delayed queue
+		$item = self::redis()->lpop($key);
+
+		// Check to see if there are any items remaining with this timestamp
+		$remaining = self::redis()->llen($key);
+
+		// If not we can delete the list
+		if ( ! $remaining)
+		{
+			self::redis()->del($key);
+			self::redis()->zrem('delayed_queue_schedule', $timestamp);
+		}
+		
+		if ( ! $item)
+			return;
+
+		return json_decode($item, true);
+	}
 }

@@ -254,5 +254,34 @@ class Resque_Job
 		}
 		return '(' . implode(' | ', $name) . ')';
 	}
+	
+	/**
+	 * Delay adding a job to a queue. This method schedules a job 
+	 * for queueing. Specify a timestamp to control when the job gets 
+	 * added to the queue.
+	 *
+	 * @param DateTime $delay When to add the job to the queue
+	 * @param string   $queue The queue name
+	 * @param string   $class The worker to run
+	 * @param array    $args  Job arguments
+	 */
+	public static function createDelayed(DateTime $delay, $queue, $class, $args = null)
+	{
+		if ($args !== null && ! is_array($args))
+		{
+			throw new InvalidArgumentException(
+				'Supplied $args must be an array.'
+			);
+		}
+
+		$item = array(
+			'class'   => $class,
+			'args'    => $args,
+			'queue'   => $queue,
+			'id'      => md5(uniqid('', true)),
+		);
+
+		Resque::pushDelayed($delay, $item);
+	}
 }
 ?>
